@@ -1,4 +1,4 @@
-name: SVT Test Embed Thumbnail
+name: SVT Test Embed with Thumbnail
 
 on:
   workflow_dispatch:
@@ -23,17 +23,16 @@ jobs:
               print("Webhook not set")
               exit(1)
 
-          # 香港時間
           tz_hk = pytz.timezone("Asia/Hong_Kong")
           now_hk = datetime.now(tz_hk).strftime("%Y.%m.%d %H:%M:%S")
 
-          # 固定用 7400 商品資訊
+          # Test 商品資料（公開可訪問圖片）
           item = {
               "name": "The Thirteen Tapes (TTT) vol.2/13 WOOZI",
               "price": "KRW ₩16,500",
               "time": now_hk + " HKT",
               "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
-              "image": "https://shop-phinf.pstatic.net/20221031_78/1667180326360WqRGl_JPEG/image_1.jpg"
+              "image": "https://i.imgur.com/your_test_image.jpg"  # ✅ 公開圖床 URL
           }
 
           embed = {
