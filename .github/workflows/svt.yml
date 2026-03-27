@@ -1,4 +1,4 @@
-name: SVT Restock Bot (Fancy Embed + First Run Test Emoji + HKT Time)
+name: SVT Restock Bot (Test Once + HKT Time)
 
 on:
   schedule:
@@ -15,7 +15,7 @@ jobs:
       - name: Install Python packages
         run: pip install requests pytz
 
-      - name: Run Restock Bot (Test + HKT Time)
+      - name: Run Restock Bot (Test Once + HKT)
         run: |
           python <<EOF
           import os, json, requests
@@ -52,7 +52,8 @@ jobs:
                       name = p.get("name")
                       price = p.get("price","N/A")
                       stock = p.get("inStock", False)
-                      link = f"https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400"  # 模擬真實 link
+                      # 首次測試只用 sales/7400 link
+                      link = f"https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400" if first_run else f"https://shop.weverse.io/en/shop/KRW/artists/7"
                       img = p.get("thumbnail", None) or p.get("image", None)
                       items.append({
                           "id": f"{name}_{region}",
@@ -67,7 +68,7 @@ jobs:
                   print(region, "ERROR", e)
 
           # ------------------------
-          # 第一次 run → Test embed
+          # 第一次 run → 綠色 Test Embed
           # ------------------------
           if first_run and WEBHOOK:
               embeds = []
