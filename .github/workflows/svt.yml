@@ -1,89 +1,36 @@
-name: SVT PRO Restock Bot (Stable)
+name: SVT Discord Webhook Test
 
 on:
+  workflow_dispatch:  # 手動觸發
   schedule:
-    - cron: "*/5 * * * *"  # 每 5 分鐘跑一次
-  workflow_dispatch:
+    - cron: "*/5 * * * *"  # 每 5 分鐘跑一次（可選）
 
 jobs:
-  monitor:
+  test_discord:
     runs-on: ubuntu-latest
-
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # 避免 Node.js 20 warning
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Python packages
-        run: pip install requests beautifulsoup4
-
-      - name: Run bot
+      - name: Test Discord webhook
         run: |
           python <<EOF
+          import os
           import requests
-          from bs4 import BeautifulSoup
-          import json, os
 
-          URL = "https://shop.weverse.io/en/shop/KRW/artists/7"
-          headers = {"User-Agent": "Mozilla/5.0"}
-
-          # 抓頁面
-          res = requests.get(URL, headers=headers)
-          soup = BeautifulSoup(res.text, "html.parser")
-
-          # 找到商品
-          items = []
-          for a in soup.find_all("a", href=True):
-              if "/sales/" in a["href"]:
-                  text = a.get_text(strip=True)
-                  items.append({
-                      "name": text,
-                      "link": "https://shop.weverse.io" + a["href"]
-                  })
-
-          print("Items found:", items)
-
-          # load old data
-          if os.path.exists("old.json"):
-              with open("old.json") as f:
-                  old = json.load(f)
+          webhook_url = os.environ.get("DISCORD_WEBHOOK")
+          if not webhook_url:
+              print("❌ DISCORD_WEBHOOK not set!")
           else:
-              old = []
-
-          print("Old items:", old)
-
-          # compare
-          old_names = [i["name"] for i in old]
-
-          for item in items:
-              if item["name"] in old_names:
-                  old_item = next(i for i in old if i["name"] == item["name"])
-                  old_sold_out = "sold out" in old_item["name"].lower()
-                  new_sold_out = "sold out" in item["name"].lower()
-
-                  # 如果之前賣完而家有貨
-                  if old_sold_out and not new_sold_out:
-                      data = {
-                          "embeds": [{
-                              "title": "🚨 SEVENTEEN RESTOCK",
-                              "description": f"🛍 {item['name']}",
-                              "url": item["link"],
-                              "color": 16711680
-                          }]
-                      }
-
-                      webhook_url = os.environ.get("DISCORD_WEBHOOK")
-                      if webhook_url:
-                          response = requests.post(
-                              webhook_url,
-                              json=data,
-                              headers={"Content-Type": "application/json"}
-                          )
-                          print("Discord response:", response.status_code)
-                      else:
-                          print("DISCORD_WEBHOOK not set!")
-
-          # save new
-          with open("old.json", "w") as f:
-              json.dump(items, f)
+              data = {"content": "🔥 Test message from GitHub Actions 🔥"}
+              response = requests.post(
+                  webhook_url,
+                  json=data,
+                  headers={"Content-Type": "application/json"}
+              )
+              print("Discord response code:", response.status_code)
+              if response.status_code == 200:
+                  print("✅ Message sent successfully!")
+              else:
+                  print("❌ Failed to send message:", response.text)
           EOF
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
