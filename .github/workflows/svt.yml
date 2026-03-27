@@ -1,25 +1,71 @@
-name: Discord Webhook Test
+name: SVT PRO Restock Bot (Stable)
 
 on:
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
-  test:
+  monitor:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Send test message
+      - uses: actions/checkout@v3
+
+      - name: Install Python packages
+        run: pip install requests beautifulsoup4
+
+      - name: Run bot
         run: |
           python <<EOF
-          import requests, os
+          import requests
+          from bs4 import BeautifulSoup
+          import json, os
 
-          url = os.environ.get("DISCORD_WEBHOOK")
+          URL = "https://shop.weverse.io/en/shop/KRW/artists/7"
+          headers = {"User-Agent": "Mozilla/5.0"}
 
-          print("Webhook:", url)  # debug用
+          res = requests.get(URL, headers=headers)
+          soup = BeautifulSoup(res.text, "html.parser")
 
-          requests.post(url, json={
-              "content": "🔥 BOT TEST SUCCESS 🔥"
-          })
+          items = []
+          for a in soup.find_all("a", href=True):
+              if "/sales/" in a["href"]:
+                  text = a.get_text(strip=True)
+                  items.append({
+                      "name": text,
+                      "link": "https://shop.weverse.io" + a["href"]
+                  })
+
+          # load old data
+          if os.path.exists("old.json"):
+              with open("old.json") as f:
+                  old = json.load(f)
+          else:
+              old = []
+
+          # compare
+          old_names = [i["name"] for i in old]
+
+          for item in items:
+              if item["name"] in old_names:
+                  old_item = next(i for i in old if i["name"] == item["name"])
+
+                  if True:
+                      data = {
+                          "embeds": [{
+                              "title": "🚨 SEVENTEEN RESTOCK",
+                              "description": f"🛍 {item['name']}",
+                              "url": item["link"],
+                              "color": 16711680
+                          }]
+                      }
+
+                      requests.post(os.environ["DISCORD_WEBHOOK"], json=data)
+
+          # save new
+          with open("old.json", "w") as f:
+              json.dump(items, f)
           EOF
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
