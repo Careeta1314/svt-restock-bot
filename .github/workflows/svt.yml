@@ -1,4 +1,4 @@
-name: SVT Restock Bot (Test Once + HKT Time)
+name: SVT Restock Bot (Safe Test + HKT Time)
 
 on:
   schedule:
@@ -15,7 +15,7 @@ jobs:
       - name: Install Python packages
         run: pip install requests pytz
 
-      - name: Run Restock Bot (Test Once + HKT)
+      - name: Run Restock Bot (Safe Test)
         run: |
           python <<EOF
           import os, json, requests
@@ -23,6 +23,10 @@ jobs:
           import pytz
 
           WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
+          if not WEBHOOK:
+              print("ERROR: DISCORD_WEBHOOK not set")
+              exit(1)
+
           REGIONS = ["KR", "JP"]
           FILE = "old.json"
 
@@ -33,15 +37,20 @@ jobs:
           # ------------------------
           # 強制第一次用 sales/7400 模擬 Test Embed
           # ------------------------
-          if WEBHOOK:
+          try:
               API = "https://api.weverse.io/shop/v1/products"
               HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
               resp = requests.get(API, headers=HEADERS, params={"artistId": 7, "country": "KR"}, timeout=10)
+              resp.raise_for_status()
               products = resp.json().get("data", [])
+          except Exception as e:
+              print("API ERROR:", e)
+              products = []
 
+          if products:
               embeds = []
               for p in products:
-                  name = p.get("name")
+                  name = p.get("name", "N/A")
                   price = p.get("price", "N/A")
                   img = p.get("thumbnail", None) or p.get("image", None)
                   link = "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400"
@@ -57,21 +66,25 @@ jobs:
                       embed["thumbnail"] = {"url": img}
                   embeds.append(embed)
 
-              r = requests.post(WEBHOOK, json={"embeds": embeds})
-              print(r.status_code, r.text)
+              try:
+                  r = requests.post(WEBHOOK, json={"embeds": embeds})
+                  print("Discord POST:", r.status_code, r.text)
+              except Exception as e:
+                  print("Discord POST ERROR:", e)
 
           # ------------------------
-          # 補貨檢查（之後 workflow 照常運作）
+          # 正式補貨檢查
           # ------------------------
           first_run = not os.path.exists(FILE)
           items = []
 
           for region in REGIONS:
               try:
-                  resp = requests.get("https://api.weverse.io/shop/v1/products", headers=HEADERS, params={"artistId": 7, "country": region}, timeout=10)
+                  resp = requests.get(API, headers=HEADERS, params={"artistId": 7, "country": region}, timeout=10)
+                  resp.raise_for_status()
                   products = resp.json().get("data", [])
                   for p in products:
-                      name = p.get("name")
+                      name = p.get("name","N/A")
                       price = p.get("price","N/A")
                       stock = p.get("inStock", False)
                       link = f"https://shop.weverse.io/en/shop/KRW/artists/7"
@@ -88,11 +101,12 @@ jobs:
               except Exception as e:
                   print(region, "ERROR", e)
 
-          if not first_run and WEBHOOK:
+          if not first_run and items:
               try:
                   with open(FILE) as f:
                       old_map = {i["id"]: i for i in json.load(f)}
-              except:
+              except Exception as e:
+                  print("Load old.json ERROR:", e)
                   old_map = {}
 
               for item in items:
@@ -110,9 +124,16 @@ jobs:
                           }
                           if item["image"]:
                               embed["thumbnail"] = {"url": item["image"]}
-                          requests.post(WEBHOOK, json={"embeds": [embed]})
+                          try:
+                              r = requests.post(WEBHOOK, json={"embeds": [embed]})
+                              print("Discord POST:", r.status_code, r.text)
+                          except Exception as e:
+                              print("Discord POST ERROR:", e)
 
           # Save JSON
-          with open(FILE, "w") as f:
-              json.dump(items, f)
+          try:
+              with open(FILE, "w") as f:
+                  json.dump(items, f)
+          except Exception as e:
+              print("Save JSON ERROR:", e)
           EOF
