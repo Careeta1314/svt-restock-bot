@@ -1,4 +1,4 @@
-name: SVT Restock Bot (Beautiful Embed + Forced Test + HKT Time)
+name: SVT Restock Bot (Full Version + Real Test Image + HKT)
 
 on:
   schedule:
@@ -14,8 +14,7 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install Python packages
         run: pip install requests pytz
-
-      - name: Run Restock Bot (Final Version)
+      - name: Run Restock Bot
         run: |
           python <<EOF
           import os, json, requests
@@ -33,20 +32,15 @@ jobs:
           tz_hk = pytz.timezone("Asia/Hong_Kong")
           now_hk = datetime.now(tz_hk).strftime("%Y.%m.%d %H:%M:%S")
 
-          # 建立 embed function
+          # Embed 建立 function
           def create_embed(item, region=None, test=False):
               if test:
                   color = 65280
                   title = f"🟢 {item['name']} 補貨啦‼️"
               else:
-                  if region=="KR":
-                      color = 16711680
-                      title = f"🔴 {item['name']} 補貨啦‼️"
-                  else:
-                      color = 3447003
-                      title = f"🔵 {item['name']} 補貨啦‼️"
-
-              embed = {
+                  color = 16711680 if region=="KR" else 3447003
+                  title = f"{'🔴' if region=='KR' else '🔵'} {item['name']} 補貨啦‼️"
+              return {
                   "title": title,
                   "color": color,
                   "fields": [
@@ -57,47 +51,37 @@ jobs:
                   ],
                   "thumbnail": {"url": item.get("image", "")}
               }
-              return embed
 
           # ------------------------
-          # 第一次跑 → 強制 Test Embed (抓 sales/7400 真實縮圖)
+          # 第一次跑 → 強制 Test Embed
           # ------------------------
           if first_run and WEBHOOK:
               try:
-                  # 抓 KR 國家商品資料
-                  API_ONE = "https://api.weverse.io/shop/v1/products"
+                  API = "https://api.weverse.io/shop/v1/products"
                   HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-                  params = {"artistId": 7, "country": "KR"}
-                  resp_one = requests.get(API_ONE, headers=HEADERS, params=params, timeout=10)
-                  resp_one.raise_for_status()
-                  products_one = resp_one.json().get("data", [])
-
-                  # 找 sales/7400 商品
+                  resp = requests.get(API, headers=HEADERS, params={"artistId": 7, "country": "KR"}, timeout=10)
+                  resp.raise_for_status()
+                  products = resp.json().get("data", [])
+                  
                   test_item_data = None
-                  for p in products_one:
-                      if p.get("name","").find("7400") != -1:
+                  for p in products:
+                      if "7400" in p.get("name",""):
                           test_item_data = p
                           break
-                  if not test_item_data and products_one:
-                      test_item_data = products_one[0]  # fallback
+                  if not test_item_data and products:
+                      test_item_data = products[0]  # fallback
 
-                  if test_item_data:
-                      name = test_item_data.get("name","N/A")
-                      price = test_item_data.get("price","N/A")
-                      img = test_item_data.get("thumbnail") or test_item_data.get("image") or ""
-                      link = "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400"
+                  test_item = {
+                      "name": test_item_data.get("name","N/A"),
+                      "price": test_item_data.get("price","N/A"),
+                      "time": now_hk,
+                      "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
+                      "image": test_item_data.get("thumbnail") or test_item_data.get("image") or ""
+                  }
 
-                      test_item = {
-                          "name": name,
-                          "price": price,
-                          "time": now_hk,
-                          "link": link,
-                          "image": img
-                      }
-
-                      embed = create_embed(test_item, test=True)
-                      r = requests.post(WEBHOOK, json={"embeds": [embed]})
-                      print("Discord Test POST:", r.status_code, r.text)
+                  embed = create_embed(test_item, test=True)
+                  r = requests.post(WEBHOOK, json={"embeds": [embed]})
+                  print("Discord Test POST:", r.status_code, r.text)
 
               except Exception as e:
                   print("Test API ERROR:", e)
@@ -105,9 +89,7 @@ jobs:
           # ------------------------
           # 正式補貨檢查
           # ------------------------
-          REGIONS = ["KR", "JP"]
-          API = "https://api.weverse.io/shop/v1/products"
-          HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+          REGIONS = ["KR","JP"]
           items = []
 
           for region in REGIONS:
@@ -116,25 +98,20 @@ jobs:
                   resp.raise_for_status()
                   products = resp.json().get("data", [])
                   for p in products:
-                      name = p.get("name","N/A")
-                      price = p.get("price","N/A")
-                      stock = p.get("inStock", False)
-                      link = f"https://shop.weverse.io/en/shop/KRW/artists/7"
-                      img = p.get("thumbnail", None) or p.get("image", None)
                       items.append({
-                          "id": f"{name}_{region}",
-                          "name": name,
-                          "price": price,
-                          "sold_out": not stock,
+                          "id": f"{p.get('name','N/A')}_{region}",
+                          "name": p.get("name","N/A"),
+                          "price": p.get("price","N/A"),
+                          "sold_out": not p.get("inStock", False),
                           "region": region,
-                          "link": link,
-                          "image": img,
+                          "link": f"https://shop.weverse.io/en/shop/KRW/artists/7",
+                          "image": p.get("thumbnail") or p.get("image") or "",
                           "time": now_hk
                       })
               except Exception as e:
                   print(region, "ERROR", e)
 
-          # 正式補貨發送
+          # 發送正式補貨
           if not first_run and items:
               try:
                   with open(FILE) as f:
