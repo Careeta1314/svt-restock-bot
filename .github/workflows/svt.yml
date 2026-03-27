@@ -1,10 +1,10 @@
-name: SVT Thumbnail Test (56223)
+name: SVT Thumbnail Test Embed
 
 on:
   workflow_dispatch:
 
 jobs:
-  test_thumbnail:
+  test_embed:
     runs-on: ubuntu-latest
     env:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
@@ -23,38 +23,13 @@ jobs:
               print("ERROR: DISCORD_WEBHOOK not set")
               exit(1)
 
-          # 抓 API 56223 商品
-          API = "https://api.weverse.io/shop/v1/products"
-          HEADERS = {
-              "User-Agent": "Mozilla/5.0",
-              "Accept": "application/json"
+          # 用已知公開可訪問縮圖
+          test_item = {
+              "name": "The Thirteen Tapes (TTT) vol.2/13 WOOZI",
+              "price": "KRW ₩16,500",
+              "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
+              "image": "https://i.imgur.com/your_test_image.jpg"  # ✅ 公開圖床
           }
-          params = {"artistId": 7, "country": "KR"}  # KR 先抓 list
-          resp = requests.get(API, headers=HEADERS, params=params, timeout=10)
-          resp.raise_for_status()
-          products = resp.json().get("data", [])
-
-          # 找 56223 或 fallback 第一件
-          target = None
-          for p in products:
-              # 有啲 API 會有 sales/xxxx 喺 link，而 p["id"] 可包含 “56223”
-              # 或者你要改成比對 p["saleItemId"] / p["itemId"]
-              name = p.get("name","")
-              if "56223" in name or "56223" in str(p.get("id","")):
-                  target = p
-                  break
-
-          if not target and products:
-              target = products[0]
-
-          if not target:
-              print("No product found for thumbnail test")
-              exit(1)
-
-          # 取 thumbnail 或 image
-          img = target.get("thumbnail") or target.get("image") or ""
-          name = target.get("name","N/A")
-          price = target.get("price","N/A")
 
           # 香港時間
           tz = pytz.timezone("Asia/Hong_Kong")
@@ -62,18 +37,18 @@ jobs:
 
           # 建 Embed
           embed = {
-              "title": f"Thumbnail Test | {name}",
+              "title": f"🟢 {test_item['name']} 補貨啦‼️",
               "color": 65280,
               "fields": [
-                  {"name": "📦 商品名稱", "value": name},
-                  {"name": "💰 售價", "value": price},
-                  {"name": "🕐 測試時間", "value": now_hk},
-                  {"name": "📷 圖片 URL", "value": img or "無找到 image"}
+                  {"name": "補貨通路 Test", "value": "\u200b"},
+                  {"name": "**📦商品名稱**", "value": test_item['name']},
+                  {"name": "**💰售價**", "value": test_item['price']},
+                  {"name": "**🕐補貨時間**", "value": now_hk},
+                  {"name": "**🔗商品連結**", "value": test_item['link']}
               ],
-              "thumbnail": {"url": img} if img else None
+              "thumbnail": {"url": test_item['image']}
           }
 
-          # POST
-          r = requests.post(WEBHOOK, json={"embeds":[embed]})
+          r = requests.post(WEBHOOK, json={"embeds": [embed]})
           print("Discord POST:", r.status_code, r.text)
           EOF
