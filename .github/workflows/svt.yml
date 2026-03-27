@@ -1,50 +1,46 @@
-name: SVT Super Simple Test Embed
+name: Simple Thumbnail Embed Test
 
 on:
   workflow_dispatch:
 
 jobs:
-  test_embed:
+  simple:
     runs-on: ubuntu-latest
     env:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
     steps:
-      - name: Install Python packages
-        run: pip install requests
-      - name: Send Simple Test Embed
+      - name: Install Python
+        run: pip install requests pytz
+      - name: Send Thumbnail Test
         run: |
           python <<EOF
           import os, requests
 
           WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
-          if not WEBHOOK:
-              print("ERROR: DISCORD_WEBHOOK not set")
+          API = "https://api.weverse.io/shop/v1/products"
+          HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+
+          # fetch KR
+          resp = requests.get(API, headers=HEADERS, params={"artistId":7,"country":"KR"})
+          data = resp.json().get("data", [])
+          if not data:
+              print("No data from API")
               exit(1)
 
-          # 固定測試商品資訊
-          test_item = {
-              "name": "The Thirteen Tapes (TTT) vol.2/13 WOOZI",
-              "price": "KRW ₩16,500",
-              "time": "2026.03.28 00:17:38",
-              "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
-              "image": "https://shop-phinf.pstatic.net/20221031_78/1667180326360WqRGl_JPEG/image_1.jpg"
-          }
+          # pick first product and get real image
+          p = data[0]
+          img_url = p.get("thumbnail") or p.get("image")
+          name = p.get("name")
+          price = p.get("price","N/A")
 
-          # 建立簡單 Embed
           embed = {
-              "title": f"🟢 {test_item['name']} 補貨啦‼️",
+              "title": f"Thumbnail Test for {name}",
               "color": 65280,
               "fields": [
-                  {"name": "補貨通路 Test", "value": "\u200b"},
-                  {"name": "**📦商品名稱**", "value": test_item['name']},
-                  {"name": "**💰售價**", "value": test_item['price']},
-                  {"name": "**🕐補貨時間**", "value": test_item['time'] + " HKT"},
-                  {"name": "**🔗商品連結**", "value": test_item['link']}
+                  {"name": "Image URL", "value": img_url or "none"}
               ],
-              "thumbnail": {"url": test_item['image']}
+              "thumbnail": {"url": img_url}
           }
-
-          # 發送 Discord
           r = requests.post(WEBHOOK, json={"embeds":[embed]})
-          print("Discord POST status:", r.status_code, r.text)
+          print("status:", r.status_code, r.text)
           EOF
