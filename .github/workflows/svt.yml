@@ -1,4 +1,4 @@
-name: SVT Restock Bot (Full + Force Test + Channel + HKT)
+name: SVT Restock Bot (Full + Test Embed with Real Thumbnail)
 
 on:
   schedule:
@@ -35,7 +35,7 @@ jobs:
           HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
 
           # ------------------------
-          # 建立 Embed function
+          # Embed 建立 function
           # ------------------------
           def create_embed(item, region=None, test=False):
               if test:
@@ -65,13 +65,25 @@ jobs:
           # ------------------------
           if first_run and WEBHOOK:
               try:
+                  resp = requests.get(API, headers=HEADERS, params={"artistId":7, "country":"KR"}, timeout=10)
+                  resp.raise_for_status()
+                  products = resp.json().get("data", [])
+                  test_item_data = None
+                  for p in products:
+                      if "7400" in p.get("name",""):
+                          test_item_data = p
+                          break
+                  if not test_item_data and products:
+                      test_item_data = products[0]
+
                   test_item = {
-                      "name": "The Thirteen Tapes (TTT) vol.2/13 WOOZI",
-                      "price": "KRW ₩16,500",
+                      "name": test_item_data.get("name","N/A"),
+                      "price": test_item_data.get("price","N/A"),
                       "time": now_hk,
                       "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
-                      "image": "https://shop.weverse.io/shop-v1/products/7400/thumbnail.jpg"
+                      "image": test_item_data.get("thumbnail") or test_item_data.get("image") or ""
                   }
+
                   embed = create_embed(test_item, test=True)
                   r = requests.post(WEBHOOK, json={"embeds":[embed]})
                   print("Discord Test POST:", r.status_code, r.text)
