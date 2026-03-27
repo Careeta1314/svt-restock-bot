@@ -1,23 +1,20 @@
-name: SVT Restock Bot (Full + Test Embed with Real Thumbnail)
+name: SVT Test Embed (Minimal)
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
-  monitor:
+  test_embed:
     runs-on: ubuntu-latest
     env:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
     steps:
-      - uses: actions/checkout@v3
       - name: Install Python packages
         run: pip install requests pytz
-      - name: Run Restock Bot
+      - name: Send Test Embed
         run: |
           python <<EOF
-          import os, json, requests
+          import os, requests
           from datetime import datetime
           import pytz
 
@@ -26,118 +23,47 @@ jobs:
               print("ERROR: DISCORD_WEBHOOK not set")
               exit(1)
 
-          FILE = "old.json"
-          first_run = not os.path.exists(FILE)
+          # 香港時間
           tz_hk = pytz.timezone("Asia/Hong_Kong")
           now_hk = datetime.now(tz_hk).strftime("%Y.%m.%d %H:%M:%S")
 
+          # 抓 7400 商品資訊
           API = "https://api.weverse.io/shop/v1/products"
           HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+          resp = requests.get(API, headers=HEADERS, params={"artistId":7, "country":"KR"}, timeout=10)
+          resp.raise_for_status()
+          products = resp.json().get("data", [])
+          test_item_data = None
+          for p in products:
+              if "7400" in p.get("name",""):
+                  test_item_data = p
+                  break
+          if not test_item_data and products:
+              test_item_data = products[0]
 
-          # ------------------------
-          # Embed 建立 function
-          # ------------------------
-          def create_embed(item, region=None, test=False):
-              if test:
-                  color = 65280
-                  title = f"🟢 {item['name']} 補貨啦‼️"
-                  channel_line = "補貨通路 Test"
-              else:
-                  color = 16711680 if region=="KR" else 3447003
-                  title = f"{'🔴' if region=='KR' else '🔵'} {item['name']} 補貨啦‼️"
-                  channel_line = f"補貨通路 {'🇰🇷KR' if region=='KR' else '🇯🇵JP'}"
+          test_item = {
+              "name": test_item_data.get("name","N/A"),
+              "price": test_item_data.get("price","N/A"),
+              "time": now_hk,
+              "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
+              "image": test_item_data.get("thumbnail") or test_item_data.get("image") or ""
+          }
 
-              return {
-                  "title": title,
-                  "color": color,
-                  "fields": [
-                      {"name": channel_line, "value": "\u200b"},
-                      {"name": "**📦商品名稱**", "value": item['name']},
-                      {"name": "**💰售價**", "value": item['price']},
-                      {"name": "**🕐補貨時間**", "value": item['time'] + " HKT"},
-                      {"name": "**🔗商品連結**", "value": item['link']}
-                  ],
-                  "thumbnail": {"url": item.get("image","")}
-              }
+          # 建立 Embed
+          embed = {
+              "title": f"🟢 {test_item['name']} 補貨啦‼️",
+              "color": 65280,
+              "fields": [
+                  {"name": "補貨通路 Test", "value": "\u200b"},
+                  {"name": "**📦商品名稱**", "value": test_item['name']},
+                  {"name": "**💰售價**", "value": test_item['price']},
+                  {"name": "**🕐補貨時間**", "value": test_item['time'] + " HKT"},
+                  {"name": "**🔗商品連結**", "value": test_item['link']}
+              ],
+              "thumbnail": {"url": test_item.get("image","")}
+          }
 
-          # ------------------------
-          # 強制發 7400 Test Embed
-          # ------------------------
-          if first_run and WEBHOOK:
-              try:
-                  resp = requests.get(API, headers=HEADERS, params={"artistId":7, "country":"KR"}, timeout=10)
-                  resp.raise_for_status()
-                  products = resp.json().get("data", [])
-                  test_item_data = None
-                  for p in products:
-                      if "7400" in p.get("name",""):
-                          test_item_data = p
-                          break
-                  if not test_item_data and products:
-                      test_item_data = products[0]
-
-                  test_item = {
-                      "name": test_item_data.get("name","N/A"),
-                      "price": test_item_data.get("price","N/A"),
-                      "time": now_hk,
-                      "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
-                      "image": test_item_data.get("thumbnail") or test_item_data.get("image") or ""
-                  }
-
-                  embed = create_embed(test_item, test=True)
-                  r = requests.post(WEBHOOK, json={"embeds":[embed]})
-                  print("Discord Test POST:", r.status_code, r.text)
-              except Exception as e:
-                  print("Test Embed ERROR:", e)
-
-          # ------------------------
-          # 正式補貨檢查 KR/JP
-          # ------------------------
-          REGIONS = ["KR","JP"]
-          items = []
-          for region in REGIONS:
-              try:
-                  resp = requests.get(API, headers=HEADERS, params={"artistId":7, "country":region}, timeout=10)
-                  resp.raise_for_status()
-                  products = resp.json().get("data", [])
-                  for p in products:
-                      items.append({
-                          "id": f"{p.get('name','N/A')}_{region}",
-                          "name": p.get("name","N/A"),
-                          "price": p.get("price","N/A"),
-                          "sold_out": not p.get("inStock", False),
-                          "region": region,
-                          "link": f"https://shop.weverse.io/en/shop/KRW/artists/7",
-                          "image": p.get("thumbnail") or p.get("image") or "",
-                          "time": now_hk
-                      })
-              except Exception as e:
-                  print(region,"ERROR", e)
-
-          if not first_run and items:
-              try:
-                  with open(FILE) as f:
-                      old_map = {i["id"]: i for i in json.load(f)}
-              except Exception as e:
-                  print("Load old.json ERROR:", e)
-                  old_map = {}
-
-              for item in items:
-                  item_id = item["id"]
-                  if item_id in old_map:
-                      old_item = old_map[item_id]
-                      if old_item["sold_out"] and not item["sold_out"]:
-                          embed = create_embed(item, region=item["region"])
-                          try:
-                              r = requests.post(WEBHOOK, json={"embeds":[embed]})
-                              print("Discord POST:", r.status_code, r.text)
-                          except Exception as e:
-                              print("Discord POST ERROR:", e)
-
-          # Save JSON
-          try:
-              with open(FILE, "w") as f:
-                  json.dump(items,f)
-          except Exception as e:
-              print("Save JSON ERROR:", e)
+          # 發送 Discord
+          r = requests.post(WEBHOOK, json={"embeds":[embed]})
+          print("Discord POST status:", r.status_code, r.text)
           EOF
