@@ -1,4 +1,4 @@
-name: SVT Restock Bot (Guaranteed Test + HKT Time)
+name: SVT Restock Bot (Beautiful Embed + Forced Test + HKT Time)
 
 on:
   schedule:
@@ -15,7 +15,7 @@ jobs:
       - name: Install Python packages
         run: pip install requests pytz
 
-      - name: Run Restock Bot (Guaranteed Test)
+      - name: Run Restock Bot (Final Version)
         run: |
           python <<EOF
           import os, json, requests
@@ -30,24 +30,55 @@ jobs:
           FILE = "old.json"
           first_run = not os.path.exists(FILE)
 
-          # 香港時間
           tz_hk = pytz.timezone("Asia/Hong_Kong")
           now_hk = datetime.now(tz_hk).strftime("%Y-%m-%d %H:%M:%S")
 
+          def create_embed(item, region=None, test=False):
+              if test:
+                  color = 65280
+                  title = "🟢 補貨通知 (Test Embed)"
+              else:
+                  if region == "KR":
+                      color = 16711680
+                      title = "🔴 補貨通知"
+                  else:
+                      color = 3447003
+                      title = "🔵 補貨通知"
+
+              region_emoji = "🇰🇷" if region=="KR" else "🇯🇵" if region=="JP" else ""
+              embed = {
+                  "title": title,
+                  "color": color,
+                  "fields": [
+                      {
+                          "name": region_emoji + " " + (region if region else ""),
+                          "value": (
+                              f"📦 **{item['name']}**\n"
+                              f"💰 **{item['price']}**\n"
+                              f"🕐 **{item['time']}**\n"
+                              f"🔗 [點我購買]({item['link']})"
+                          )
+                      }
+                  ],
+                  "thumbnail": {"url": item.get("image", "")}
+              }
+              return embed
+
           # ------------------------
-          # 第一次跑 → 強制發 Test Embed
+          # 第一次跑 → 強制 Test Embed (固定商品 sales/7400)
           # ------------------------
           if first_run and WEBHOOK:
-              # 使用 sales/7400 商品資料 hardcode 發一條 embed
-              embed = {
-                  "title": "🧪 TEST RESTOCK (First Run)",
-                  "description": "🇰🇷 **KR**  🛍 **Seventeen Album / Item Sample**  💰 12345  ⏰ " + now_hk,
-                  "url": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
-                  "color": 65280
+              test_item = {
+                  "name": "The Thirteen Tapes (TTT) vol.2/13 WOOZI",
+                  "price": "KRW₩16,500",
+                  "time": now_hk,
+                  "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
+                  "image": "https://example.com/sample_image.jpg"  # 可換成真實縮圖
               }
+              embed = create_embed(test_item, test=True)
               try:
                   r = requests.post(WEBHOOK, json={"embeds": [embed]})
-                  print("Discord POST:", r.status_code, r.text)
+                  print("Discord Test POST:", r.status_code, r.text)
               except Exception as e:
                   print("Discord POST ERROR:", e)
 
@@ -77,7 +108,8 @@ jobs:
                           "sold_out": not stock,
                           "region": region,
                           "link": link,
-                          "image": img
+                          "image": img,
+                          "time": now_hk
                       })
               except Exception as e:
                   print(region, "ERROR", e)
@@ -95,16 +127,7 @@ jobs:
                   if item_id in old_map:
                       old_item = old_map[item_id]
                       if old_item["sold_out"] and not item["sold_out"]:
-                          color = 16711680 if item["region"]=="KR" else 3447003
-                          region_emoji = "🇰🇷" if item["region"]=="KR" else "🇯🇵"
-                          embed = {
-                              "title": "🚨 SEVENTEEN RESTOCK",
-                              "description": f"{region_emoji} **{item['region']}**  🛍 **{item['name']}**  💰 {item['price']}  ⏰ {now_hk}",
-                              "url": item["link"],
-                              "color": color
-                          }
-                          if item["image"]:
-                              embed["thumbnail"] = {"url": item["image"]}
+                          embed = create_embed(item, region=item["region"])
                           try:
                               r = requests.post(WEBHOOK, json={"embeds": [embed]})
                               print("Discord POST:", r.status_code, r.text)
