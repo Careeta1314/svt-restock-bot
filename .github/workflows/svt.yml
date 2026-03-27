@@ -1,4 +1,4 @@
-name: SVT Test Embed (Minimal)
+name: SVT Super Simple Test Embed
 
 on:
   workflow_dispatch:
@@ -10,46 +10,27 @@ jobs:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
     steps:
       - name: Install Python packages
-        run: pip install requests pytz
-      - name: Send Test Embed
+        run: pip install requests
+      - name: Send Simple Test Embed
         run: |
           python <<EOF
           import os, requests
-          from datetime import datetime
-          import pytz
 
           WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
           if not WEBHOOK:
               print("ERROR: DISCORD_WEBHOOK not set")
               exit(1)
 
-          # 香港時間
-          tz_hk = pytz.timezone("Asia/Hong_Kong")
-          now_hk = datetime.now(tz_hk).strftime("%Y.%m.%d %H:%M:%S")
-
-          # 抓 7400 商品資訊
-          API = "https://api.weverse.io/shop/v1/products"
-          HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-          resp = requests.get(API, headers=HEADERS, params={"artistId":7, "country":"KR"}, timeout=10)
-          resp.raise_for_status()
-          products = resp.json().get("data", [])
-          test_item_data = None
-          for p in products:
-              if "7400" in p.get("name",""):
-                  test_item_data = p
-                  break
-          if not test_item_data and products:
-              test_item_data = products[0]
-
+          # 固定測試商品資訊
           test_item = {
-              "name": test_item_data.get("name","N/A"),
-              "price": test_item_data.get("price","N/A"),
-              "time": now_hk,
+              "name": "The Thirteen Tapes (TTT) vol.2/13 WOOZI",
+              "price": "KRW ₩16,500",
+              "time": "2026.03.28 00:17:38",
               "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
-              "image": test_item_data.get("thumbnail") or test_item_data.get("image") or ""
+              "image": "https://shop-phinf.pstatic.net/20221031_78/1667180326360WqRGl_JPEG/image_1.jpg"
           }
 
-          # 建立 Embed
+          # 建立簡單 Embed
           embed = {
               "title": f"🟢 {test_item['name']} 補貨啦‼️",
               "color": 65280,
@@ -60,7 +41,7 @@ jobs:
                   {"name": "**🕐補貨時間**", "value": test_item['time'] + " HKT"},
                   {"name": "**🔗商品連結**", "value": test_item['link']}
               ],
-              "thumbnail": {"url": test_item.get("image","")}
+              "thumbnail": {"url": test_item['image']}
           }
 
           # 發送 Discord
