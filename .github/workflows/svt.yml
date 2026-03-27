@@ -1,46 +1,26 @@
-name: Simple Thumbnail Embed Test
+name: Discord Simple Test
 
 on:
   workflow_dispatch:
 
 jobs:
-  simple:
+  test:
     runs-on: ubuntu-latest
     env:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
     steps:
       - name: Install Python
-        run: pip install requests pytz
-      - name: Send Thumbnail Test
+        run: pip install requests
+      - name: Send Simple Test
         run: |
           python <<EOF
           import os, requests
 
           WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
-          API = "https://api.weverse.io/shop/v1/products"
-          HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-
-          # fetch KR
-          resp = requests.get(API, headers=HEADERS, params={"artistId":7,"country":"KR"})
-          data = resp.json().get("data", [])
-          if not data:
-              print("No data from API")
+          if not WEBHOOK:
+              print("Webhook not set")
               exit(1)
 
-          # pick first product and get real image
-          p = data[0]
-          img_url = p.get("thumbnail") or p.get("image")
-          name = p.get("name")
-          price = p.get("price","N/A")
-
-          embed = {
-              "title": f"Thumbnail Test for {name}",
-              "color": 65280,
-              "fields": [
-                  {"name": "Image URL", "value": img_url or "none"}
-              ],
-              "thumbnail": {"url": img_url}
-          }
-          r = requests.post(WEBHOOK, json={"embeds":[embed]})
+          r = requests.post(WEBHOOK, json={"content":"Hello! Test message from GitHub Actions"})
           print("status:", r.status_code, r.text)
           EOF
