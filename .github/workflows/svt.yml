@@ -1,4 +1,4 @@
-name: Discord Embed Test
+name: SVT Test Embed Thumbnail
 
 on:
   workflow_dispatch:
@@ -10,22 +10,28 @@ jobs:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
     steps:
       - name: Install Python
-        run: pip install requests
-      - name: Send Simple Embed
+        run: pip install requests pytz
+      - name: Send Test Embed
         run: |
           python <<EOF
           import os, requests
+          from datetime import datetime
+          import pytz
 
           WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
           if not WEBHOOK:
               print("Webhook not set")
               exit(1)
 
-          # 固定示例商品資訊
+          # 香港時間
+          tz_hk = pytz.timezone("Asia/Hong_Kong")
+          now_hk = datetime.now(tz_hk).strftime("%Y.%m.%d %H:%M:%S")
+
+          # 固定用 7400 商品資訊
           item = {
               "name": "The Thirteen Tapes (TTT) vol.2/13 WOOZI",
               "price": "KRW ₩16,500",
-              "time": "2026.03.28 00:17:38 HKT",
+              "time": now_hk + " HKT",
               "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
               "image": "https://shop-phinf.pstatic.net/20221031_78/1667180326360WqRGl_JPEG/image_1.jpg"
           }
