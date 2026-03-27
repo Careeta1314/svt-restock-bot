@@ -39,7 +39,9 @@ jobs:
                   old = json.load(f)
                   old_map = {i["id"]: i for i in old}
 
+          # ------------------------
           # 抓商品資料
+          # ------------------------
           API = "https://api.weverse.io/shop/v1/products"
           HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
           items = []
@@ -52,7 +54,7 @@ jobs:
                       name = p.get("name")
                       price = p.get("price","N/A")
                       stock = p.get("inStock", False)
-                      # 首次測試只用 sales/7400 link
+                      # 首次測試只用 sales/7400 連結
                       link = f"https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400" if first_run else f"https://shop.weverse.io/en/shop/KRW/artists/7"
                       img = p.get("thumbnail", None) or p.get("image", None)
                       items.append({
@@ -83,7 +85,8 @@ jobs:
                   if item["image"]:
                       embed["thumbnail"] = {"url": item["image"]}
                   embeds.append(embed)
-              requests.post(WEBHOOK, json={"embeds": embeds})
+              r = requests.post(WEBHOOK, json={"embeds": embeds})
+              print(r.status_code, r.text)
 
           # ------------------------
           # 正式補貨檢查
