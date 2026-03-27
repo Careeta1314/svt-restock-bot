@@ -1,10 +1,10 @@
-name: SVT Restock Bot (Guaranteed Test Embed)
+name: SVT Restock Bot (Force 7400 Test Embed)
 
 on:
   workflow_dispatch:
 
 jobs:
-  monitor:
+  force_test:
     runs-on: ubuntu-latest
     env:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install Python packages
         run: pip install requests pytz
-      - name: Run Guaranteed Test Embed
+      - name: Force Send 7400 Test Embed
         run: |
           python <<EOF
           import os, requests
@@ -27,52 +27,30 @@ jobs:
           tz_hk = pytz.timezone("Asia/Hong_Kong")
           now_hk = datetime.now(tz_hk).strftime("%Y.%m.%d %H:%M:%S")
 
-          # 抓 KR 商品資料
+          # 強行設定 sales/7400 商品資料
+          item = {
+              "name": "The Thirteen Tapes (TTT) vol.2/13 WOOZI",
+              "price": "KRW ₩16,500",
+              "time": now_hk,
+              "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
+              "image": "https://shop.weverse.io/shop-v1/products/7400/thumbnail.jpg"  # 可以換成真實縮圖
+          }
+
+          embed = {
+              "title": f"🟢 {item['name']} 補貨啦‼️",
+              "color": 65280,
+              "fields": [
+                  {"name": "**📦商品名稱**", "value": item['name']},
+                  {"name": "**💰售價**", "value": item['price']},
+                  {"name": "**🕐補貨時間**", "value": item['time'] + " HKT"},
+                  {"name": "**🔗商品連結**", "value": item['link']}
+              ],
+              "thumbnail": {"url": item.get("image","")}
+          }
+
           try:
-              API = "https://api.weverse.io/shop/v1/products"
-              HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-              resp = requests.get(API, headers=HEADERS, params={"artistId": 7, "country": "KR"}, timeout=10)
-              resp.raise_for_status()
-              products = resp.json().get("data", [])
+              r = requests.post(WEBHOOK, json={"embeds": [embed]})
+              print("Discord POST STATUS:", r.status_code, r.text)
           except Exception as e:
-              print("API ERROR:", e)
-              products = []
-
-          # 找 sales/7400
-          test_item_data = None
-          for p in products:
-              if "7400" in p.get("name",""):
-                  test_item_data = p
-                  break
-          if not test_item_data and products:
-              test_item_data = products[0]  # fallback
-
-          if test_item_data:
-              test_item = {
-                  "name": test_item_data.get("name","N/A"),
-                  "price": test_item_data.get("price","N/A"),
-                  "time": now_hk,
-                  "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
-                  "image": test_item_data.get("thumbnail") or test_item_data.get("image") or ""
-              }
-
-              embed = {
-                  "title": f"🟢 {test_item['name']} 補貨啦‼️",
-                  "color": 65280,
-                  "fields": [
-                      {"name": "**📦商品名稱**", "value": test_item['name']},
-                      {"name": "**💰售價**", "value": test_item['price']},
-                      {"name": "**🕐補貨時間**", "value": test_item['time'] + " HKT"},
-                      {"name": "**🔗商品連結**", "value": test_item['link']}
-                  ],
-                  "thumbnail": {"url": test_item.get("image","")}
-              }
-
-              try:
-                  r = requests.post(WEBHOOK, json={"embeds": [embed]})
-                  print("Discord Test POST:", r.status_code, r.text)
-              except Exception as e:
-                  print("Discord POST ERROR:", e)
-          else:
-              print("No product data found for Test Embed")
+              print("Discord POST ERROR:", e)
           EOF
