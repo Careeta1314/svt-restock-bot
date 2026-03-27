@@ -1,4 +1,4 @@
-name: SVT Restock Bot (Full Version + Channel + HKT)
+name: SVT Restock Bot (Full + Force Test + Channel + HKT)
 
 on:
   schedule:
@@ -28,7 +28,6 @@ jobs:
 
           FILE = "old.json"
           first_run = not os.path.exists(FILE)
-
           tz_hk = pytz.timezone("Asia/Hong_Kong")
           now_hk = datetime.now(tz_hk).strftime("%Y.%m.%d %H:%M:%S")
 
@@ -36,7 +35,7 @@ jobs:
           HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
 
           # ------------------------
-          # Embed 建立 function
+          # 建立 Embed function
           # ------------------------
           def create_embed(item, region=None, test=False):
               if test:
@@ -58,33 +57,21 @@ jobs:
                       {"name": "**🕐補貨時間**", "value": item['time'] + " HKT"},
                       {"name": "**🔗商品連結**", "value": item['link']}
                   ],
-                  "thumbnail": {"url": item.get("image", "")}
+                  "thumbnail": {"url": item.get("image","")}
               }
 
           # ------------------------
-          # 強制發 Test Embed（第一跑）
+          # 強制發 7400 Test Embed
           # ------------------------
           if first_run and WEBHOOK:
               try:
-                  resp = requests.get(API, headers=HEADERS, params={"artistId":7, "country":"KR"}, timeout=10)
-                  resp.raise_for_status()
-                  products = resp.json().get("data", [])
-                  test_item_data = None
-                  for p in products:
-                      if "7400" in p.get("name",""):
-                          test_item_data = p
-                          break
-                  if not test_item_data and products:
-                      test_item_data = products[0]
-
                   test_item = {
-                      "name": test_item_data.get("name","N/A"),
-                      "price": test_item_data.get("price","N/A"),
+                      "name": "The Thirteen Tapes (TTT) vol.2/13 WOOZI",
+                      "price": "KRW ₩16,500",
                       "time": now_hk,
                       "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
-                      "image": test_item_data.get("thumbnail") or test_item_data.get("image") or ""
+                      "image": "https://shop.weverse.io/shop-v1/products/7400/thumbnail.jpg"
                   }
-
                   embed = create_embed(test_item, test=True)
                   r = requests.post(WEBHOOK, json={"embeds":[embed]})
                   print("Discord Test POST:", r.status_code, r.text)
