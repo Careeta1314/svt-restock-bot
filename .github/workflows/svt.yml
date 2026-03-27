@@ -1,26 +1,111 @@
-name: Discord Simple Test
+name: SVT Restock Bot (Fancy Embed + Test + Thumbnail)
 
 on:
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
-  test:
+  monitor:
     runs-on: ubuntu-latest
     env:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
     steps:
-      - name: Install Python
-        run: pip install requests
-      - name: Send Simple Test
+      - uses: actions/checkout@v3
+      - name: Install Python packages
+        run: pip install requests pytz
+      - name: Run Restock Bot
         run: |
           python <<EOF
-          import os, requests
+          import os, json, requests
+          from datetime import datetime
+          import pytz
 
           WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
-          if not WEBHOOK:
-              print("Webhook not set")
-              exit(1)
+          REGIONS = ["KR", "JP"]
+          FILE = "old.json"
+          first_run = not os.path.exists(FILE)
 
-          r = requests.post(WEBHOOK, json={"content":"Hello! Test message from GitHub Actions"})
-          print("status:", r.status_code, r.text)
+          tz_hk = pytz.timezone("Asia/Hong_Kong")
+          now_hk = datetime.now(tz_hk).strftime("%Y.%m.%d %H:%M:%S")
+
+          if first_run:
+              old_map = {}
+          else:
+              with open(FILE) as f:
+                  old = json.load(f)
+                  old_map = {i["id"]: i for i in old}
+
+          # 抓商品資料
+          API = "https://api.weverse.io/shop/v1/products"
+          HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+          items = []
+
+          for region in REGIONS:
+              try:
+                  resp = requests.get(API, headers=HEADERS, params={"artistId": 7, "country": region}, timeout=10)
+                  resp.raise_for_status()
+                  products = resp.json().get("data", [])
+                  for p in products:
+                      name = p.get("name")
+                      price = p.get("price","N/A")
+                      stock = p.get("inStock", False)
+                      link = f"https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400"  # 固定 7400 方便 Test
+                      img = p.get("thumbnail") or p.get("image") or ""
+                      items.append({
+                          "id": f"{name}_{region}",
+                          "name": name,
+                          "price": price,
+                          "sold_out": not stock,
+                          "region": region,
+                          "link": link,
+                          "image": img
+                      })
+              except Exception as e:
+                  print(region, "ERROR", e)
+
+          # 第一次跑 → 強制 Test Embed（只發一次）
+          if first_run and WEBHOOK:
+              for item in items:
+                  region_emoji = "🇰🇷" if item["region"]=="KR" else "🇯🇵"
+                  embed = {
+                      "title": f"🟢 {item['name']} 補貨啦‼️",
+                      "color": 65280,
+                      "fields": [
+                          {"name": f"補貨通路 Test", "value": "\u200b"},
+                          {"name": "**📦商品名稱**", "value": item['name']},
+                          {"name": "**💰售價**", "value": item['price']},
+                          {"name": "**🕐補貨時間**", "value": now_hk + " HKT"},
+                          {"name": "**🔗商品連結**", "value": item['link']}
+                      ],
+                      "thumbnail": {"url": item.get("image","")}
+                  }
+                  requests.post(WEBHOOK, json={"embeds": [embed]})
+              print("Test Embed sent")
+
+          # 正式補貨檢查
+          for item in items:
+              item_id = item["id"]
+              if not first_run and item_id in old_map:
+                  old_item = old_map[item_id]
+                  if old_item["sold_out"] and not item["sold_out"]:
+                      color = 16711680 if item["region"]=="KR" else 3447003
+                      region_emoji = "🇰🇷" if item["region"]=="KR" else "🇯🇵"
+                      embed = {
+                          "title": f"{region_emoji} {item['name']} 補貨啦‼️",
+                          "color": color,
+                          "fields": [
+                              {"name": f"補貨通路 {item['region']}", "value": "\u200b"},
+                              {"name": "**📦商品名稱**", "value": item['name']},
+                              {"name": "**💰售價**", "value": item['price']},
+                              {"name": "**🕐補貨時間**", "value": now_hk + " HKT"},
+                              {"name": "**🔗商品連結**", "value": item['link']}
+                          ],
+                          "thumbnail": {"url": item.get("image","")}
+                      }
+                      requests.post(WEBHOOK, json={"embeds": [embed]})
+
+          # Save JSON
+          with open(FILE, "w") as f:
+              json.dump(items, f)
           EOF
