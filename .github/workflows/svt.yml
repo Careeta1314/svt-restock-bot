@@ -1,4 +1,4 @@
-name: SVT PRO Restock Bot
+name: SVT PRO Restock Bot (Stable)
 
 on:
   schedule:
@@ -12,55 +12,60 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install tools
+      - name: Install Python packages
+        run: pip install requests beautifulsoup4
+
+      - name: Run bot
         run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
-          sudo apt-get install -y npm
-          npm install -g pup
+          python <<EOF
+          import requests
+          from bs4 import BeautifulSoup
+          import json, os
 
-      - name: Fetch page
-        run: |
-          curl -s https://shop.weverse.io/en/shop/KRW/artists/7 > page.html
+          URL = "https://shop.weverse.io/en/shop/KRW/artists/7"
+          headers = {"User-Agent": "Mozilla/5.0"}
 
-      - name: Extract items
-        run: |
-          cat page.html | pup 'a[href*="/sales/"] json{}' > items.json
+          res = requests.get(URL, headers=headers)
+          soup = BeautifulSoup(res.text, "html.parser")
 
-      - name: Compare and detect restock
-        run: |
-          if [ -f old.json ]; then
+          items = []
+          for a in soup.find_all("a", href=True):
+              if "/sales/" in a["href"]:
+                  text = a.get_text(strip=True)
+                  items.append({
+                      "name": text,
+                      "link": "https://shop.weverse.io" + a["href"]
+                  })
 
-            COUNT=$(jq length items.json)
+          # load old data
+          if os.path.exists("old.json"):
+              with open("old.json") as f:
+                  old = json.load(f)
+          else:
+              old = []
 
-            for i in $(seq 0 $(($COUNT-1))); do
+          # compare
+          old_names = [i["name"] for i in old]
 
-              NEW=$(jq .[$i] items.json)
-              OLD=$(jq .[$i] old.json 2>/dev/null || echo '{}')
+          for item in items:
+              if item["name"] in old_names:
+                  old_item = next(i for i in old if i["name"] == item["name"])
 
-              NEW_TEXT=$(echo "$NEW" | jq -r '.text')
-              OLD_TEXT=$(echo "$OLD" | jq -r '.text')
+                  if "SOLD OUT" in old_item["name"] and "SOLD OUT" not in item["name"]:
+                      data = {
+                          "embeds": [{
+                              "title": "🚨 SEVENTEEN RESTOCK",
+                              "description": f"🛍 {item['name']}",
+                              "url": item["link"],
+                              "color": 16711680
+                          }]
+                      }
 
-              if echo "$OLD_TEXT" | grep -q "SOLD OUT" && ! echo "$NEW_TEXT" | grep -q "SOLD OUT"; then
+                      requests.post(os.environ["DISCORD_WEBHOOK"], json=data)
 
-                NAME=$(echo "$NEW_TEXT")
-                LINK=$(echo "$NEW" | jq -r '.href')
-                IMAGE=$(echo "$NEW" | jq -r '.children[0].children[0].attrs.src // empty')
-
-                curl -X POST -H "Content-Type: application/json" \
-                -d "{
-                  \"embeds\": [{
-                    \"title\": \"🚨 SEVENTEEN RESTOCK\",
-                    \"description\": \"🛍 $NAME\",
-                    \"url\": \"https://shop.weverse.io$LINK\",
-                    \"image\": {\"url\": \"$IMAGE\"},
-                    \"color\": 16711680
-                  }]
-                }" \
-                ${{ secrets.DISCORD_WEBHOOK }}
-
-              fi
-            done
-          fi
-
-          cp items.json old.json
+          # save new
+          with open("old.json", "w") as f:
+              json.dump(items, f)
+          EOF
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
