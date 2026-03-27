@@ -1,4 +1,4 @@
-name: SVT Restock Bot (Fancy Embed + First Run Test Emoji)
+name: SVT Restock Bot (Fancy Embed + First Run Test Emoji + HKT Time)
 
 on:
   schedule:
@@ -13,21 +13,25 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Python packages
-        run: pip install requests
+        run: pip install requests pytz
 
-      - name: Run Restock Bot (Fancy Embed + First Run Test Emoji)
+      - name: Run Restock Bot (Fancy Embed + Test Emoji + HKT Time)
         run: |
           python <<EOF
           import os, json, requests
           from datetime import datetime
+          import pytz
 
           WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
           REGIONS = ["KR", "JP"]
           FILE = "old.json"
           first_run = not os.path.exists(FILE)
-          now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-          # 🔹 讀舊資料
+          # 香港時間
+          tz_hk = pytz.timezone("Asia/Hong_Kong")
+          now_hk = datetime.utcnow().replace(tzinfo=pytz.utc).astimezone(tz_hk).strftime("%Y-%m-%d %H:%M:%S")
+
+          # 讀舊資料
           if first_run:
               old_map = {}
           else:
@@ -35,7 +39,7 @@ jobs:
                   old = json.load(f)
                   old_map = {i["id"]: i for i in old}
 
-          # 🔹 真正抓商品流程（KR/JP）
+          # 抓商品流程
           API = "https://api.weverse.io/shop/v1/products"
           HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
           items = []
@@ -62,21 +66,21 @@ jobs:
               except Exception as e:
                   print(region, "ERROR", e)
 
-          # 🔹 第一次 run → 發單條模擬 test embed
+          # 第一次 run → 發單條模擬 test embed，每件商品單獨一行
           if first_run and WEBHOOK:
               description_lines = []
               for item in items:
                   region_emoji = "🇰🇷" if item["region"]=="KR" else "🇯🇵"
-                  description_lines.append(f"{region_emoji} **{item['region']}**\n🛍 **{item['name']}**\n💰 {item['price']}")
-              description_lines.append(f"⏰ {now} (Test Embed - Green)")
+                  description_lines.append(f"{region_emoji} **{item['region']}**  🛍 **{item['name']}**  💰 {item['price']}  ⏰ {now_hk}")
+              description_lines.append("(Test Embed - Green)")
               embed = {
                   "title": "🧪 TEST RESTOCK (First Run)",
-                  "description": "\n\n".join(description_lines),
+                  "description": "\n".join(description_lines),
                   "color": 65280  # 綠色表示 test
               }
               requests.post(WEBHOOK, json={"embeds": [embed]})
 
-          # 🔹 後續補貨檢查
+          # 後續補貨檢查
           for item in items:
               item_id = item["id"]
               if not first_run and item_id in old_map:
@@ -86,7 +90,7 @@ jobs:
                       region_emoji = "🇰🇷" if item["region"]=="KR" else "🇯🇵"
                       embed = {
                           "title": "🚨 SEVENTEEN RESTOCK",
-                          "description": f"{region_emoji} **{item['region']}**\n🛍 **{item['name']}**\n💰 {item['price']}\n⏰ {now}",
+                          "description": f"{region_emoji} **{item['region']}**  🛍 **{item['name']}**  💰 {item['price']}  ⏰ {now_hk}",
                           "url": item["link"],
                           "color": color
                       }
@@ -95,7 +99,7 @@ jobs:
                       if WEBHOOK:
                           requests.post(WEBHOOK, json={"embeds": [embed]})
 
-          # 🔹 保存最新資料
+          # 保存最新資料
           with open(FILE, "w") as f:
               json.dump(items, f)
           EOF
