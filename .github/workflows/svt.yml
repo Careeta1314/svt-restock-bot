@@ -25,37 +25,56 @@ jobs:
           WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
           REGIONS = ["KR", "JP"]
           FILE = "old.json"
-          first_run = not os.path.exists(FILE)
 
           # 香港時間
           tz_hk = pytz.timezone("Asia/Hong_Kong")
           now_hk = datetime.now(tz_hk).strftime("%Y-%m-%d %H:%M:%S")
 
-          # 讀舊資料
-          if first_run:
-              old_map = {}
-          else:
-              with open(FILE) as f:
-                  old = json.load(f)
-                  old_map = {i["id"]: i for i in old}
+          # ------------------------
+          # 強制第一次用 sales/7400 模擬 Test Embed
+          # ------------------------
+          if WEBHOOK:
+              API = "https://api.weverse.io/shop/v1/products"
+              HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+              resp = requests.get(API, headers=HEADERS, params={"artistId": 7, "country": "KR"}, timeout=10)
+              products = resp.json().get("data", [])
+
+              embeds = []
+              for p in products:
+                  name = p.get("name")
+                  price = p.get("price", "N/A")
+                  img = p.get("thumbnail", None) or p.get("image", None)
+                  link = "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400"
+                  region_emoji = "🇰🇷"
+
+                  embed = {
+                      "title": "🧪 TEST RESTOCK (First Run)",
+                      "description": f"{region_emoji} **KR**  🛍 **{name}**  💰 {price}  ⏰ {now_hk}",
+                      "url": link,
+                      "color": 65280  # 綠色
+                  }
+                  if img:
+                      embed["thumbnail"] = {"url": img}
+                  embeds.append(embed)
+
+              r = requests.post(WEBHOOK, json={"embeds": embeds})
+              print(r.status_code, r.text)
 
           # ------------------------
-          # 抓商品資料
+          # 補貨檢查（之後 workflow 照常運作）
           # ------------------------
-          API = "https://api.weverse.io/shop/v1/products"
-          HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+          first_run = not os.path.exists(FILE)
           items = []
 
           for region in REGIONS:
               try:
-                  resp = requests.get(API, headers=HEADERS, params={"artistId": 7, "country": region}, timeout=10)
+                  resp = requests.get("https://api.weverse.io/shop/v1/products", headers=HEADERS, params={"artistId": 7, "country": region}, timeout=10)
                   products = resp.json().get("data", [])
                   for p in products:
                       name = p.get("name")
                       price = p.get("price","N/A")
                       stock = p.get("inStock", False)
-                      # 首次測試只用 sales/7400 連結
-                      link = f"https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400" if first_run else f"https://shop.weverse.io/en/shop/KRW/artists/7"
+                      link = f"https://shop.weverse.io/en/shop/KRW/artists/7"
                       img = p.get("thumbnail", None) or p.get("image", None)
                       items.append({
                           "id": f"{name}_{region}",
@@ -69,44 +88,29 @@ jobs:
               except Exception as e:
                   print(region, "ERROR", e)
 
-          # ------------------------
-          # 第一次 run → 綠色 Test Embed
-          # ------------------------
-          if first_run and WEBHOOK:
-              embeds = []
-              for item in items:
-                  region_emoji = "🇰🇷" if item["region"]=="KR" else "🇯🇵"
-                  embed = {
-                      "title": "🧪 TEST RESTOCK (First Run)",
-                      "description": f"{region_emoji} **{item['region']}**  🛍 **{item['name']}**  💰 {item['price']}  ⏰ {now_hk}",
-                      "url": item["link"],
-                      "color": 65280  # 綠色
-                  }
-                  if item["image"]:
-                      embed["thumbnail"] = {"url": item["image"]}
-                  embeds.append(embed)
-              r = requests.post(WEBHOOK, json={"embeds": embeds})
-              print(r.status_code, r.text)
+          if not first_run and WEBHOOK:
+              try:
+                  with open(FILE) as f:
+                      old_map = {i["id"]: i for i in json.load(f)}
+              except:
+                  old_map = {}
 
-          # ------------------------
-          # 正式補貨檢查
-          # ------------------------
-          for item in items:
-              item_id = item["id"]
-              if not first_run and item_id in old_map:
-                  old_item = old_map[item_id]
-                  if old_item["sold_out"] and not item["sold_out"]:
-                      color = 16711680 if item["region"]=="KR" else 3447003
-                      region_emoji = "🇰🇷" if item["region"]=="KR" else "🇯🇵"
-                      embed = {
-                          "title": "🚨 SEVENTEEN RESTOCK",
-                          "description": f"{region_emoji} **{item['region']}**  🛍 **{item['name']}**  💰 {item['price']}  ⏰ {now_hk}",
-                          "url": item["link"],
-                          "color": color
-                      }
-                      if item["image"]:
-                          embed["thumbnail"] = {"url": item["image"]}
-                      requests.post(WEBHOOK, json={"embeds": [embed]})
+              for item in items:
+                  item_id = item["id"]
+                  if item_id in old_map:
+                      old_item = old_map[item_id]
+                      if old_item["sold_out"] and not item["sold_out"]:
+                          color = 16711680 if item["region"]=="KR" else 3447003
+                          region_emoji = "🇰🇷" if item["region"]=="KR" else "🇯🇵"
+                          embed = {
+                              "title": "🚨 SEVENTEEN RESTOCK",
+                              "description": f"{region_emoji} **{item['region']}**  🛍 **{item['name']}**  💰 {item['price']}  ⏰ {now_hk}",
+                              "url": item["link"],
+                              "color": color
+                          }
+                          if item["image"]:
+                              embed["thumbnail"] = {"url": item["image"]}
+                          requests.post(WEBHOOK, json={"embeds": [embed]})
 
           # Save JSON
           with open(FILE, "w") as f:
