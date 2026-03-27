@@ -1,36 +1,117 @@
-name: SVT Discord Webhook Test
+name: SVT Restock Bot (Advanced + Test Embed)
 
 on:
-  workflow_dispatch:  # 手動觸發
   schedule:
-    - cron: "*/5 * * * *"  # 每 5 分鐘跑一次（可選）
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
 
 jobs:
-  test_discord:
+  monitor:
     runs-on: ubuntu-latest
     env:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # 避免 Node.js 20 warning
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - name: Test Discord webhook
+      - uses: actions/checkout@v3
+      - name: Install Python packages
+        run: pip install requests beautifulsoup4
+      - name: Send Test Embed to Discord
+        run: |
+          python <<EOF
+          import os, requests
+          from datetime import datetime
+
+          webhook_url = os.environ.get("DISCORD_WEBHOOK")
+          now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+          if webhook_url:
+              embed = {
+                  "title": "🧪 SVT Bot Test Message",
+                  "description": f"⏰ Test time: {now}\nThis is a test embed to confirm Discord webhook works.",
+                  "color": 16776960  # 黄色
+              }
+              data = {"embeds": [embed]}
+              response = requests.post(webhook_url, json=data, headers={"Content-Type": "application/json"})
+              print("Discord test embed response code:", response.status_code)
+          else:
+              print("❌ DISCORD_WEBHOOK not set")
+          EOF
+      - name: Run SVT Advanced Safe Restock Bot
         run: |
           python <<EOF
           import os
+          import json
           import requests
+          from bs4 import BeautifulSoup
+          from datetime import datetime
+
+          URL = "https://shop.weverse.io/en/shop/KRW/artists/7"
+          headers = {"User-Agent": "Mozilla/5.0"}
+
+          res = requests.get(URL, headers=headers)
+          soup = BeautifulSoup(res.text, "html.parser")
+
+          items = []
+          for a in soup.find_all("a", href=True):
+              if "/sales/" in a["href"]:
+                  parent = a.find_parent("div", class_="card") or a.parent
+                  img_tag = parent.find("img") if parent else None
+                  img_url = img_tag["src"] if img_tag and "src" in img_tag.attrs else None
+                  price_tag = parent.find("div", class_="price") if parent else None
+                  price_text = price_tag.get_text(strip=True) if price_tag else None
+
+                  text = a.get_text(strip=True)
+                  sold_out_flag = "sold out" in text.lower()
+                  items.append({
+                      "name": text,
+                      "link": "https://shop.weverse.io" + a["href"],
+                      "image": img_url,
+                      "price": price_text,
+                      "sold_out": sold_out_flag
+                  })
+
+          print("Items found:", items)
+
+          old_file = "old.json"
+          first_run = not os.path.exists(old_file)
+
+          if first_run:
+              old = []
+          else:
+              with open(old_file) as f:
+                  old = json.load(f)
 
           webhook_url = os.environ.get("DISCORD_WEBHOOK")
-          if not webhook_url:
-              print("❌ DISCORD_WEBHOOK not set!")
-          else:
-              data = {"content": "🔥 Test message from GitHub Actions 🔥"}
-              response = requests.post(
-                  webhook_url,
-                  json=data,
-                  headers={"Content-Type": "application/json"}
-              )
-              print("Discord response code:", response.status_code)
-              if response.status_code == 200:
-                  print("✅ Message sent successfully!")
-              else:
-                  print("❌ Failed to send message:", response.text)
+          now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+          if not first_run:
+              old_names = [i["name"] for i in old]
+
+              for item in items:
+                  if item["name"] in old_names:
+                      old_item = next(i for i in old if i["name"] == item["name"])
+                      # 只通知補貨
+                      if old_item.get("sold_out") and not item.get("sold_out"):
+                          embed = {
+                              "title": "🚨 SEVENTEEN RESTOCK",
+                              "description": f"🛍 {item['name']}\n💰 {item['price'] if item['price'] else 'N/A'}\n⏰ Restock time: {now}",
+                              "url": item["link"],
+                              "color": 16711680  # 紅色
+                          }
+                          if item["image"]:
+                              embed["thumbnail"] = {"url": item["image"]}
+
+                          data = {"embeds": [embed]}
+
+                          if webhook_url:
+                              response = requests.post(
+                                  webhook_url,
+                                  json=data,
+                                  headers={"Content-Type": "application/json"}
+                              )
+                              print("Discord restock embed response code:", response.status_code)
+
+          # 保存資料，包括每件商品 sold_out 狀態
+          with open(old_file, "w") as f:
+              json.dump(items, f)
           EOF
