@@ -61,6 +61,7 @@ jobs:
                           }]
                       }
 
+                      requests.post(os.environ["DISCORD_WEBHOOK"], json={"content":"TEST MESSAGE"})
                       requests.post(os.environ["DISCORD_WEBHOOK"], json=data)
 
           # save new
