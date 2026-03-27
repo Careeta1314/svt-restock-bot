@@ -1,4 +1,4 @@
-name: SVT Restock Bot (Fancy Embed + First Run Test Single)
+name: SVT Restock Bot (Fancy Embed + First Run Test Emoji)
 
 on:
   schedule:
@@ -15,7 +15,7 @@ jobs:
       - name: Install Python packages
         run: pip install requests
 
-      - name: Run Restock Bot (Fancy Embed + First Run Test Single)
+      - name: Run Restock Bot (Fancy Embed + First Run Test Emoji)
         run: |
           python <<EOF
           import os, json, requests
@@ -65,10 +65,9 @@ jobs:
           # 🔹 第一次 run → 發單條模擬 test embed
           if first_run and WEBHOOK:
               description_lines = []
-              for region in REGIONS:
-                  for item in items:
-                      region_emoji = "🇰🇷" if region=="KR" else "🇯🇵"
-                      description_lines.append(f"{region_emoji} **{region}**\n🛍 **{item['name']}**\n💰 {item['price']}")
+              for item in items:
+                  region_emoji = "🇰🇷" if item["region"]=="KR" else "🇯🇵"
+                  description_lines.append(f"{region_emoji} **{item['region']}**\n🛍 **{item['name']}**\n💰 {item['price']}")
               description_lines.append(f"⏰ {now} (Test Embed - Green)")
               embed = {
                   "title": "🧪 TEST RESTOCK (First Run)",
