@@ -1,59 +1,137 @@
-name: SVT Test Embed (56222)
+name: SVT Restock Bot (Auto Thumbnail + Test)
 
 on:
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
-  send_test:
+  monitor:
     runs-on: ubuntu-latest
     env:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
     steps:
-      - name: Install Python
-        run: pip install requests pytz
-      - name: Send 56222 Test Embed
+      - uses: actions/checkout@v3
+      - name: Install Python packages
+        run: pip install requests beautifulsoup4 pytz
+
+      - name: Run Restock Bot (Auto Thumbnail)
         run: |
           python <<EOF
-          import os, requests
+          import os, json, requests
           from datetime import datetime
           import pytz
+          from bs4 import BeautifulSoup
 
           WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
           if not WEBHOOK:
-              print("ERROR: DISCORD_WEBHOOK not set")
+              print("Discord webhook not set")
               exit(1)
 
+          REGIONS = ["KR", "JP"]
+          FILE = "old.json"
+          first_run = not os.path.exists(FILE)
+
           # 香港時間
-          tz = pytz.timezone("Asia/Hong_Kong")
-          now_hk = datetime.now(tz).strftime("%Y.%m.%d %H:%M:%S HKT")
+          tz_hk = pytz.timezone("Asia/Hong_Kong")
+          now_hk = datetime.now(tz_hk).strftime("%Y.%m.%d %H:%M:%S HKT")
 
-          # 固定測試商品 56222
-          item = {
-              "name": "S/S T‑Shirt Black Ver.2",
-              "price": "KRW ₩55,000",
-              "time": now_hk,
-              "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/56222",
-              "image": "https://cdn-contents.weverseshop.io/public/shop/ac66af21a06a7e2768233a8e9e0317ed.png?w=720&q=95"
-          }
+          # 讀舊資料
+          if first_run:
+              old_map = {}
+          else:
+              with open(FILE) as f:
+                  old = json.load(f)
+                  old_map = {i["id"]: i for i in old}
 
-          # 組 Embed
-          embed = {
-              "title": f"🟢 {item['name']} 補貨啦‼️",
-              "color": 65280,
-              "fields": [
-                  {"name": "補貨通路 Test", "value": "\u200b"},
-                  {"name": "**📦商品名稱**", "value": item['name']},
-                  {"name": "**💰售價**", "value": item['price']},
-                  {"name": "**🕐補貨時間**", "value": item['time']},
-                  {"name": "**🔗商品連結**", "value": item['link']}
-              ],
-              "thumbnail": {"url": item['image']}
-          }
+          # ---- Test Embed 固定商品 56223 ----
+          if first_run and WEBHOOK:
+              test_url = "https://shop.weverse.io/en/shop/KRW/artists/7/sales/56223"
+              resp = requests.get(test_url, timeout=10)
+              soup = BeautifulSoup(resp.text, "html.parser")
+              og = soup.find("meta", {"property":"og:image"})
+              if og and og.get("content"):
+                  img_url = og["content"]
+              else:
+                  img_tag = soup.find("img")
+                  img_url = img_tag["src"] if img_tag else ""
+              if not img_url:
+                  img_url = "https://cdn-contents.weverseshop.io/public/shop/ac66af21a06a7e2768233a8e9e0317ed.png?w=720&q=95"
 
-          # 發送到 Discord
-          try:
-              r = requests.post(WEBHOOK, json={"embeds":[embed]})
-              print("status:", r.status_code, r.text)
-          except Exception as e:
-              print("Discord POST ERROR:", e)
+              item = {
+                  "id": "test_56223",
+                  "name": "S/S T‑Shirt Black Ver.2",
+                  "price": "KRW ₩55,000",
+                  "link": test_url,
+                  "image": img_url,
+                  "region": "Test"
+              }
+
+              embed = {
+                  "title": f"🟢 {item['name']} 補貨啦‼️",
+                  "color": 65280,
+                  "fields": [
+                      {"name": "補貨通路 Test", "value": "\u200b"},
+                      {"name": "**📦商品名稱**", "value": item['name']},
+                      {"name": "**💰售價**", "value": item['price']},
+                      {"name": "**🕐補貨時間**", "value": now_hk},
+                      {"name": "**🔗商品連結**", "value": item['link']}
+                  ],
+                  "thumbnail": {"url": item['image']}
+              }
+              requests.post(WEBHOOK, json={"embeds":[embed]})
+
+          # ---- 正式補貨監控 ----
+          API = "https://api.weverse.io/shop/v1/products"
+          HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+          items = []
+
+          for region in REGIONS:
+              try:
+                  resp = requests.get(API, headers=HEADERS, params={"artistId": 7, "country": region}, timeout=10)
+                  products = resp.json().get("data", [])
+                  for p in products:
+                      name = p.get("name")
+                      price = p.get("price","N/A")
+                      stock = p.get("inStock", False)
+                      link = f"https://shop.weverse.io/en/shop/KRW/artists/7"
+                      img = p.get("thumbnail", None) or p.get("image", None)
+                      items.append({
+                          "id": f"{name}_{region}",
+                          "name": name,
+                          "price": price,
+                          "sold_out": not stock,
+                          "region": region,
+                          "link": link,
+                          "image": img
+                      })
+              except Exception as e:
+                  print(region, "ERROR", e)
+
+          # 補貨檢查
+          for item in items:
+              item_id = item["id"]
+              if not first_run and item_id in old_map:
+                  old_item = old_map[item_id]
+                  if old_item["sold_out"] and not item["sold_out"]:
+                      color = 16711680 if item["region"]=="KR" else 3447003
+                      region_emoji = "🇰🇷" if item["region"]=="KR" else "🇯🇵"
+                      embed = {
+                          "title": f"{region_emoji} {item['name']} 補貨啦‼️",
+                          "color": color,
+                          "fields": [
+                              {"name": f"補貨通路 {region_emoji} {item['region']}", "value": "\u200b"},
+                              {"name": "**📦商品名稱**", "value": item['name']},
+                              {"name": "**💰售價**", "value": item['price']},
+                              {"name": "**🕐補貨時間**", "value": now_hk},
+                              {"name": "**🔗商品連結**", "value": item['link']}
+                          ],
+                          "thumbnail": {"url": item["image"]} if item["image"] else None
+                      }
+                      if WEBHOOK:
+                          requests.post(WEBHOOK, json={"embeds":[embed]})
+
+          # 保存最新資料
+          with open(FILE, "w") as f:
+              json.dump(items, f)
           EOF
