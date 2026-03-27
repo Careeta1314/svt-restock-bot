@@ -51,7 +51,7 @@ jobs:
               if item["name"] in old_names:
                   old_item = next(i for i in old if i["name"] == item["name"])
 
-                  if "SOLD OUT" in old_item["name"] and "SOLD OUT" not in item["name"]:
+                  if True:
                       data = {
                           "embeds": [{
                               "title": "🚨 SEVENTEEN RESTOCK",
