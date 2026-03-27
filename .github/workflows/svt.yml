@@ -1,17 +1,17 @@
-name: Weverse API Thumbnail Test (56223)
+name: SVT Test Embed (56222)
 
 on:
   workflow_dispatch:
 
 jobs:
-  test_thumbnail:
+  send_test:
     runs-on: ubuntu-latest
     env:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
     steps:
       - name: Install Python
         run: pip install requests pytz
-      - name: Send API Thumbnail Test Embed
+      - name: Send 56222 Test Embed
         run: |
           python <<EOF
           import os, requests
@@ -20,46 +20,40 @@ jobs:
 
           WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
           if not WEBHOOK:
-              print("DISCORD_WEBHOOK not set")
+              print("ERROR: DISCORD_WEBHOOK not set")
               exit(1)
 
-          # fetch product list for KR to find the 56223 item
-          API = "https://api.weverse.io/shop/v1/products"
-          HEADERS = {"User-Agent":"Mozilla/5.0", "Accept":"application/json"}
-          resp = requests.get(API, headers=HEADERS, params={"artistId":7, "country":"KR"})
-          resp.raise_for_status()
-          products = resp.json().get("data", [])
-
-          target = None
-          for p in products:
-              # try matching sale id or name
-              if "56223" in str(p.get("id","")) or "56223" in p.get("name",""):
-                  target=p
-                  break
-          if not target and products:
-              target = products[0]
-
-          name = target.get("name","N/A")
-          price = target.get("price","N/A")
-          img = target.get("thumbnail") or target.get("image") or ""
-          link = "https://shop.weverse.io/en/shop/KRW/artists/7/sales/56223"
-
+          # 香港時間
           tz = pytz.timezone("Asia/Hong_Kong")
           now_hk = datetime.now(tz).strftime("%Y.%m.%d %H:%M:%S HKT")
 
-          # embed
-          embed = {
-              "title": f"🔎 API Thumbnail Test | {name}",
-              "color": 65280,
-              "fields": [
-                  {"name":"📦 商品名稱","value":name},
-                  {"name":"💰 售價","value":price},
-                  {"name":"🕐 時間","value":now_hk},
-                  {"name":"📷 圖片 URL","value": img or "No image url found"},
-                  {"name":"🔗 商品連結","value": link}
-              ],
-              "thumbnail": {"url": img} if img else None
+          # 固定測試商品 56222
+          item = {
+              "name": "S/S T‑Shirt Black Ver.2",
+              "price": "KRW ₩55,000",
+              "time": now_hk,
+              "link": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/56222",
+              "image": "https://cdn-contents.weverseshop.io/public/shop/ac66af21a06a7e2768233a8e9e0317ed.png?w=720&q=95"
           }
 
-          requests.post(WEBHOOK, json={"embeds":[embed]})
+          # 組 Embed
+          embed = {
+              "title": f"🟢 {item['name']} 補貨啦‼️",
+              "color": 65280,
+              "fields": [
+                  {"name": "補貨通路 Test", "value": "\u200b"},
+                  {"name": "**📦商品名稱**", "value": item['name']},
+                  {"name": "**💰售價**", "value": item['price']},
+                  {"name": "**🕐補貨時間**", "value": item['time']},
+                  {"name": "**🔗商品連結**", "value": item['link']}
+              ],
+              "thumbnail": {"url": item['image']}
+          }
+
+          # 發送到 Discord
+          try:
+              r = requests.post(WEBHOOK, json={"embeds":[embed]})
+              print("status:", r.status_code, r.text)
+          except Exception as e:
+              print("Discord POST ERROR:", e)
           EOF
