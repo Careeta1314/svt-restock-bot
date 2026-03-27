@@ -1,4 +1,4 @@
-name: SVT Restock Bot (Safe Test + HKT Time)
+name: SVT Restock Bot (Guaranteed Test + HKT Time)
 
 on:
   schedule:
@@ -15,7 +15,7 @@ jobs:
       - name: Install Python packages
         run: pip install requests pytz
 
-      - name: Run Restock Bot (Safe Test)
+      - name: Run Restock Bot (Guaranteed Test)
         run: |
           python <<EOF
           import os, json, requests
@@ -27,47 +27,26 @@ jobs:
               print("ERROR: DISCORD_WEBHOOK not set")
               exit(1)
 
-          REGIONS = ["KR", "JP"]
           FILE = "old.json"
+          first_run = not os.path.exists(FILE)
 
           # 香港時間
           tz_hk = pytz.timezone("Asia/Hong_Kong")
           now_hk = datetime.now(tz_hk).strftime("%Y-%m-%d %H:%M:%S")
 
           # ------------------------
-          # 強制第一次用 sales/7400 模擬 Test Embed
+          # 第一次跑 → 強制發 Test Embed
           # ------------------------
-          try:
-              API = "https://api.weverse.io/shop/v1/products"
-              HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-              resp = requests.get(API, headers=HEADERS, params={"artistId": 7, "country": "KR"}, timeout=10)
-              resp.raise_for_status()
-              products = resp.json().get("data", [])
-          except Exception as e:
-              print("API ERROR:", e)
-              products = []
-
-          if products:
-              embeds = []
-              for p in products:
-                  name = p.get("name", "N/A")
-                  price = p.get("price", "N/A")
-                  img = p.get("thumbnail", None) or p.get("image", None)
-                  link = "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400"
-                  region_emoji = "🇰🇷"
-
-                  embed = {
-                      "title": "🧪 TEST RESTOCK (First Run)",
-                      "description": f"{region_emoji} **KR**  🛍 **{name}**  💰 {price}  ⏰ {now_hk}",
-                      "url": link,
-                      "color": 65280  # 綠色
-                  }
-                  if img:
-                      embed["thumbnail"] = {"url": img}
-                  embeds.append(embed)
-
+          if first_run and WEBHOOK:
+              # 使用 sales/7400 商品資料 hardcode 發一條 embed
+              embed = {
+                  "title": "🧪 TEST RESTOCK (First Run)",
+                  "description": "🇰🇷 **KR**  🛍 **Seventeen Album / Item Sample**  💰 12345  ⏰ " + now_hk,
+                  "url": "https://shop.weverse.io/en/shop/KRW/artists/7/sales/7400",
+                  "color": 65280
+              }
               try:
-                  r = requests.post(WEBHOOK, json={"embeds": embeds})
+                  r = requests.post(WEBHOOK, json={"embeds": [embed]})
                   print("Discord POST:", r.status_code, r.text)
               except Exception as e:
                   print("Discord POST ERROR:", e)
@@ -75,7 +54,9 @@ jobs:
           # ------------------------
           # 正式補貨檢查
           # ------------------------
-          first_run = not os.path.exists(FILE)
+          REGIONS = ["KR", "JP"]
+          API = "https://api.weverse.io/shop/v1/products"
+          HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
           items = []
 
           for region in REGIONS:
