@@ -1,4 +1,4 @@
-name: SVT Restock Bot (Single Msg + Test Once)
+name: SVT Restock Bot (Single Msg + Test Once + Stable Price)
 
 on:
   schedule:
@@ -23,6 +23,7 @@ jobs:
           from datetime import datetime
           import pytz
           from bs4 import BeautifulSoup
+          import re
 
           WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
           if not WEBHOOK:
@@ -49,15 +50,21 @@ jobs:
                   resp = requests.get(test_url, timeout=10)
                   soup = BeautifulSoup(resp.text, "html.parser")
 
-                  # 自動抓商品名稱
+                  # 抓商品名稱
                   name_tag = soup.find("meta", {"property":"og:title"})
                   name = name_tag["content"] if name_tag else "Unknown Product"
 
-                  # 自動抓售價
+                  # 穩定抓售價
                   price_tag = soup.find("meta", {"property":"product:price:amount"})
-                  price = "KRW₩" + price_tag["content"] if price_tag else "N/A"
+                  if price_tag and price_tag.get("content"):
+                      price = "KRW₩" + price_tag["content"]
+                  else:
+                      # fallback: 抓頁面文字裡第一個含 ₩
+                      text = soup.get_text()
+                      m = re.search(r"₩\s?\d{1,3}(?:,\d{3})*", text)
+                      price = m.group(0) if m else "N/A"
 
-                  # 自動抓縮圖
+                  # 抓縮圖
                   og_img = soup.find("meta", {"property":"og:image"})
                   image_url = og_img["content"] if og_img else ""
 
@@ -102,7 +109,10 @@ jobs:
                   products = resp.json().get("data", [])
                   for p in products:
                       name = p.get("name")
+                      
+                      # price fallback: meta 或頁面文字（簡化版，抓 JSON price）
                       price = p.get("price","N/A")
+                      
                       stock = p.get("inStock", False)
                       link = f"https://shop.weverse.io/en/shop/KRW/artists/7"
                       img = p.get("thumbnail", None) or p.get("image", None)
