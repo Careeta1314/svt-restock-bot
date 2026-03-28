@@ -1,4 +1,4 @@
-name: SVT Restock Bot (Auto Thumbnail + Test Once)
+name: SVT Restock Bot (Single Msg + Test Once)
 
 on:
   schedule:
@@ -10,13 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # 🔹 強制 Node.js 24
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v3
       - name: Install Python packages
         run: pip install requests beautifulsoup4 pytz
 
-      - name: Run Restock Bot (Auto Thumbnail + Test Once)
+      - name: Run Restock Bot + Test Embed
         run: |
           python <<EOF
           import os, json, requests
@@ -30,65 +30,68 @@ jobs:
               exit(1)
 
           FLAG_FILE = "test_sent.flag"
+          OLD_FILE = "old.json"
           REGIONS = ["KR", "JP"]
-          FILE = "old.json"
-
-          first_run = not os.path.exists(FILE)
-
           tz_hk = pytz.timezone("Asia/Hong_Kong")
           now_hk = datetime.now(tz_hk).strftime("%Y.%m.%d %H:%M:%S HKT")
 
+          first_run = not os.path.exists(OLD_FILE)
           if first_run:
               old_map = {}
           else:
-              with open(FILE) as f:
-                  old = json.load(f)
-                  old_map = {i["id"]: i for i in old}
+              with open(OLD_FILE) as f:
+                  old_map = {i["id"]: i for i in json.load(f)}
 
-          # ---- 一次性 Test Embed ----
+          # ---- Test Embed 一次性 ----
           if not os.path.exists(FLAG_FILE):
               test_url = "https://shop.weverse.io/en/shop/KRW/artists/7/sales/55715"
-              resp = requests.get(test_url, timeout=10)
-              soup = BeautifulSoup(resp.text, "html.parser")
-              og = soup.find("meta", {"property":"og:image"})
-              if og and og.get("content"):
-                  img_url = og["content"]
-              else:
-                  img_tag = soup.find("img")
-                  img_url = img_tag["src"] if img_tag else ""
-              if not img_url:
-                  # fallback 圖
-                  img_url = "https://cdn-contents.weverseshop.io/public/shop/ac66af21a06a7e2768233a8e9e0317ed.png?w=720&q=95"
+              try:
+                  resp = requests.get(test_url, timeout=10)
+                  soup = BeautifulSoup(resp.text, "html.parser")
 
-              # Test 商品資料
-              item = {
-                  "id": "test_55715",
-                  "name": "S/S T‑Shirt White Ver.1",  # 對應商品名稱
-                  "price": "KRW ₩55,000",           # 對應售價
-                  "link": test_url,
-                  "image": img_url,
-                  "region": "Test"
-              }
+                  # 自動抓商品名稱
+                  name_tag = soup.find("meta", {"property":"og:title"})
+                  name = name_tag["content"] if name_tag else "Unknown Product"
 
-              embed = {
-                  "title": f"🟢 {item['name']} 補貨啦‼️",
-                  "color": 65280,
-                  "fields": [
-                      {"name": "補貨通路 Test", "value": "\u200b"},
-                      {"name": "**📦商品名稱**", "value": item['name']},
-                      {"name": "**💰售價**", "value": item['price']},
-                      {"name": "**🕐補貨時間**", "value": now_hk},
-                      {"name": "**🔗商品連結**", "value": item['link']}
-                  ],
-                  "thumbnail": {"url": item['image']}
-              }
-              requests.post(WEBHOOK, json={"embeds":[embed]})
+                  # 自動抓售價
+                  price_tag = soup.find("meta", {"property":"product:price:amount"})
+                  price = "KRW₩" + price_tag["content"] if price_tag else "N/A"
 
-              with open(FLAG_FILE, "w") as f:
-                  f.write("done")
-              print("✅ Test Embed 發送完成")
+                  # 自動抓縮圖
+                  og_img = soup.find("meta", {"property":"og:image"})
+                  image_url = og_img["content"] if og_img else ""
 
-          # ---- 正式補貨監控 ----
+                  item = {
+                      "id": "test_55715",
+                      "name": name,
+                      "price": price,
+                      "link": test_url,
+                      "region": "Test",
+                      "image": image_url
+                  }
+
+                  embed = {
+                      "title": f"🟢 {item['name']} 補貨啦‼️",
+                      "color": 65280,
+                      "fields": [
+                          {"name": "補貨通路 Test", "value": "\u200b"},
+                          {"name": "**📦商品名稱**", "value": item['name']},
+                          {"name": "**💰售價**", "value": item['price']},
+                          {"name": "**🕐補貨時間**", "value": now_hk},
+                          {"name": "**🔗商品連結**", "value": item['link']}
+                      ],
+                      "thumbnail": {"url": item["image"]} if item["image"] else None
+                  }
+
+                  requests.post(WEBHOOK, json={"embeds":[embed]})
+                  with open(FLAG_FILE, "w") as f:
+                      f.write("done")
+                  print("✅ Test Embed 自動抓 info 發送完成")
+
+              except Exception as e:
+                  print("❌ Test Embed 發送出錯:", e)
+
+          # ---- 正式 KR/JP 補貨監控，每個商品單獨發訊息 ----
           API = "https://api.weverse.io/shop/v1/products"
           HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
           items = []
@@ -122,6 +125,7 @@ jobs:
                   if old_item["sold_out"] and not item["sold_out"]:
                       color = 16711680 if item["region"]=="KR" else 3447003
                       region_emoji = "🇰🇷" if item["region"]=="KR" else "🇯🇵"
+
                       embed = {
                           "title": f"{region_emoji} {item['name']} 補貨啦‼️",
                           "color": color,
@@ -134,9 +138,11 @@ jobs:
                           ],
                           "thumbnail": {"url": item["image"]} if item["image"] else None
                       }
-                      if WEBHOOK:
-                          requests.post(WEBHOOK, json={"embeds":[embed]})
 
-          with open(FILE, "w") as f:
+                      # 單獨發每個商品
+                      requests.post(WEBHOOK, json={"embeds":[embed]})
+
+          # 存檔
+          with open(OLD_FILE, "w") as f:
               json.dump(items, f)
           EOF
