@@ -1,4 +1,4 @@
-name: SVT Restock Bot (Auto Thumbnail + Test)
+name: SVT Restock Bot (Auto Thumbnail + Test Once)
 
 on:
   schedule:
@@ -15,7 +15,7 @@ jobs:
       - name: Install Python packages
         run: pip install requests beautifulsoup4 pytz
 
-      - name: Run Restock Bot (Auto Thumbnail)
+      - name: Run Restock Bot (Auto Thumbnail + Test Once)
         run: |
           python <<EOF
           import os, json, requests
@@ -28,11 +28,12 @@ jobs:
               print("Discord webhook not set")
               exit(1)
 
+          FLAG_FILE = "test_sent.flag"
           REGIONS = ["KR", "JP"]
           FILE = "old.json"
+
           first_run = not os.path.exists(FILE)
 
-          # 香港時間
           tz_hk = pytz.timezone("Asia/Hong_Kong")
           now_hk = datetime.now(tz_hk).strftime("%Y.%m.%d %H:%M:%S HKT")
 
@@ -44,8 +45,8 @@ jobs:
                   old = json.load(f)
                   old_map = {i["id"]: i for i in old}
 
-          # ---- Test Embed 固定商品 56223 ----
-          if first_run and WEBHOOK:
+          # ---- 一次性 Test Embed ----
+          if not os.path.exists(FLAG_FILE):
               test_url = "https://shop.weverse.io/en/shop/KRW/artists/7/sales/56223"
               resp = requests.get(test_url, timeout=10)
               soup = BeautifulSoup(resp.text, "html.parser")
@@ -80,6 +81,11 @@ jobs:
                   "thumbnail": {"url": item['image']}
               }
               requests.post(WEBHOOK, json={"embeds":[embed]})
+
+              # 標記已發送 Test
+              with open(FLAG_FILE, "w") as f:
+                  f.write("done")
+              print("✅ Test Embed 發送完成")
 
           # ---- 正式補貨監控 ----
           API = "https://api.weverse.io/shop/v1/products"
